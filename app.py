@@ -1,33 +1,64 @@
-from flask import Flask, send_from_directory, jsonify, request
+from flask import Flask, jsonify, send_file, request
+from b2sdk.v1 import InMemoryAccountInfo, B2Api
+import io
 import os
 
 app = Flask(__name__)
 
-# Mounted path to your Render Deploy Disk
-APP_DIR = "/mnt/data/mapps"
+# === B2 Configuration ===
+B2_KEY_ID = os.environ.get("B2_KEY_ID")       # Your KeyID
+B2_APP_KEY = os.environ.get("B2_APP_KEY")     # Your Application Key
+BUCKET_NAME = os.environ.get("BUCKET_NAME")   # Your bucket name
 
-# Ensure subfolder exists
-if not os.path.exists(APP_DIR):
-    try:
-        os.makedirs(APP_DIR, exist_ok=True)
-    except PermissionError:
-        raise RuntimeError(f"Cannot create subfolder {APP_DIR}. Is the Deploy Disk mounted correctly?")
+if not all([B2_KEY_ID, B2_APP_KEY, BUCKET_NAME]):
+    raise ValueError("Please set B2_KEY_ID, B2_APP_KEY, and BUCKET_NAME as environment variables.")
+
+# === Connect to B2 ===
+info = InMemoryAccountInfo()
+b2_api = B2Api(info)
+b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
+bucket = b2_api.get_bucket_by_name(BUCKET_NAME)
+
+# === Routes ===
 
 # List all .mapp files
 @app.route("/apps", methods=["GET"])
 def list_apps():
-    files = sorted(f for f in os.listdir(APP_DIR) if f.endswith(".mapp"))
-    return jsonify(files)
+    try:
+        files = [item.file_name for item, _ in bucket.ls() if item.file_name.endswith(".mapp")]
+        return jsonify(files)
+    except Exception as e:
+        print(f"Error listing apps: {e}")
+        return jsonify({"error": "Could not list apps"}), 500
 
-# Download a specific .mapp file
+from b2sdk.v1 import DownloadDestBytes
+import io
+from flask import send_file, jsonify
+
 @app.route("/apps/<filename>", methods=["GET"])
 def get_app(filename):
-    file_path = os.path.join(APP_DIR, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(APP_DIR, filename, as_attachment=True)
-    return jsonify({"error": "App not found"}), 404
+    try:
+        # Create in-memory download destination
+        download_dest = DownloadDestBytes()
 
-# Upload a .mapp file (for admin/testing)
+        # Download the file into memory - modifies download_dest in place
+        bucket.download_file_by_name(filename, download_dest)
+
+        # Get the bytes from the download destination
+        data = download_dest.bytes_written
+
+        return send_file(
+            io.BytesIO(data),
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/octet-stream"
+        )
+
+    except Exception as e:
+        print(f"Download error for '{filename}': {e}")
+        return jsonify({"error": "App not found"}), 404
+
+# Upload a .mapp file
 @app.route("/upload", methods=["POST"])
 def upload_app():
     if "file" not in request.files:
@@ -35,9 +66,25 @@ def upload_app():
     file = request.files["file"]
     if not file.filename.endswith(".mapp"):
         return jsonify({"error": "Only .mapp files allowed"}), 400
-    file.save(os.path.join(APP_DIR, file.filename))
-    return jsonify({"success": True, "filename": file.filename})
 
+    try:
+        bucket.upload_bytes(file.read(), file.filename)
+        print(f"Uploaded: {file.filename}")  # debug
+        return jsonify({"success": True, "filename": file.filename})
+    except Exception as e:
+        print(f"Upload error: {e}")
+        return jsonify({"error": "Upload failed"}), 500
+
+# Optional debug route: list all files in bucket
+@app.route("/debug-files", methods=["GET"])
+def debug_files():
+    try:
+        files = [item.file_name for item, _ in bucket.ls()]
+        return jsonify(files)
+    except Exception as e:
+        print(f"Debug listing error: {e}")
+        return jsonify({"error": "Could not list files"}), 500
+
+# === Main ===
 if __name__ == "__main__":
-    # Use Flask dev server for local testing
     app.run(host="0.0.0.0", port=10000)
