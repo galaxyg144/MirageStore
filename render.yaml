@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mirage-store
+    env: python
+    plan: free  # or starter/pro depending on your Render account
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    disk:
+      name: mirage-storage
+      mountPath: /mnt/data
+      sizeGB: 10
