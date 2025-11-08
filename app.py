@@ -2,6 +2,9 @@ from flask import Flask, jsonify, send_file, request
 from b2sdk.v1 import InMemoryAccountInfo, B2Api
 import io
 import os
+import time
+import platform
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -84,6 +87,39 @@ def debug_files():
     except Exception as e:
         print(f"Debug listing error: {e}")
         return jsonify({"error": "Could not list files"}), 500
+    
+SERVER_START_TIME = datetime.now()
+
+@app.route("/ping", methods=["POST"])
+def ping():
+    try:
+        start_time = time.time()
+
+        # Optional: light B2 check to confirm it's alive (optional but useful)
+        try:
+            _ = b2_api.account_info.get_account_id()
+            b2_status = "connected"
+        except Exception:
+            b2_status = "disconnected"
+
+        latency_ms = round((time.time() - start_time) * 1000, 2)
+
+        uptime = str(datetime.now() - SERVER_START_TIME).split(".")[0]
+
+        response = {
+            "status": "online",
+            "server": platform.node(),
+            "latency_ms": latency_ms,
+            "b2_status": b2_status,
+            "uptime": uptime,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        print(f"/ping error: {e}")
+        return jsonify({"error": "Ping failed"}), 500
 
 # === Main ===
 if __name__ == "__main__":
