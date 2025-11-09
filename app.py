@@ -4,6 +4,8 @@ import io
 import os
 import time
 import platform
+import random
+import string
 from datetime import datetime
 
 app = Flask(__name__)
@@ -21,6 +23,52 @@ info = InMemoryAccountInfo()
 b2_api = B2Api(info)
 b2_api.authorize_account("production", B2_KEY_ID, B2_APP_KEY)
 bucket = b2_api.get_bucket_by_name(BUCKET_NAME)
+
+# === Helper Functions ===
+
+def file_exists(filename):
+    """Check if a file already exists in the bucket"""
+    try:
+        for item, _ in bucket.ls():
+            if item.file_name == filename:
+                return True
+        return False
+    except Exception as e:
+        print(f"Error checking file existence: {e}")
+        return False
+
+def gshift(filename):
+    """
+    Generate a unique filename by appending random alphanumeric characters.
+    Example: test.mapp -> test-q.mapp -> test-q5.mapp -> test-q5a.mapp
+    """
+    # Split filename and extension
+    if "." in filename:
+        name, ext = filename.rsplit(".", 1)
+        ext = "." + ext
+    else:
+        name = filename
+        ext = ""
+    
+    current_name = filename
+    
+    # Keep adding random characters until we find a unique name
+    while file_exists(current_name):
+        # Generate a random alphanumeric character (a-z, 0-9)
+        random_char = random.choice(string.ascii_lowercase + string.digits)
+        
+        # Append to the name (before extension)
+        if "-" in name:
+            # Already has a suffix, add to it
+            name += random_char
+        else:
+            # First collision, add dash and character
+            name += f"-{random_char}"
+        
+        current_name = name + ext
+        print(f"Collision detected, trying: {current_name}")
+    
+    return current_name
 
 # === Routes ===
 
@@ -71,9 +119,28 @@ def upload_app():
         return jsonify({"error": "Only .mapp files allowed"}), 400
 
     try:
-        bucket.upload_bytes(file.read(), file.filename)
-        print(f"Uploaded: {file.filename}")  # debug
-        return jsonify({"success": True, "filename": file.filename})
+        original_filename = file.filename
+        
+        # Use gshift to get a unique filename
+        unique_filename = gshift(original_filename)
+        
+        # Read file data
+        file_data = file.read()
+        
+        # Upload with the unique filename
+        bucket.upload_bytes(file_data, unique_filename)
+        
+        if unique_filename != original_filename:
+            print(f"Uploaded: {original_filename} -> {unique_filename} (gshifted)")
+        else:
+            print(f"Uploaded: {unique_filename}")
+        
+        return jsonify({
+            "success": True,
+            "filename": unique_filename,
+            "original_filename": original_filename,
+            "renamed": unique_filename != original_filename
+        })
     except Exception as e:
         print(f"Upload error: {e}")
         return jsonify({"error": "Upload failed"}), 500
