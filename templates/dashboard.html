@@ -22,13 +22,6 @@
         <h1>Mirage Apps Dashboard</h1>
     </header>
     <main>
-        <h2>Upload a .mapp File</h2>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".mapp" required>
-            <button type="submit">Upload</button>
-        </form>
-        <p id="uploadStatus"></p>
-
         <h2>Available Apps</h2>
         <table>
             <thead>
@@ -43,9 +36,6 @@
 
     <script>
         const appsList = document.getElementById("appsList");
-        const uploadForm = document.getElementById("uploadForm");
-        const uploadStatus = document.getElementById("uploadStatus");
-
         // Fetch apps
         async function fetchApps() {
             const res = await fetch("/apps");
@@ -57,30 +47,7 @@
                 </tr>
             `).join("");
         }
-
-        // Upload form handler
-        uploadForm.addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const formData = new FormData(uploadForm);
-            uploadStatus.textContent = "Uploading...";
-            try {
-                const res = await fetch("/upload", { method: "POST", body: formData });
-                const data = await res.json();
-                if (data.success) {
-                    uploadStatus.textContent = `Uploaded: ${data.filename}`;
-                    uploadStatus.className = "success";
-                    fetchApps();
-                } else {
-                    uploadStatus.textContent = data.error || "Upload failed";
-                    uploadStatus.className = "error";
-                }
-            } catch (err) {
-                uploadStatus.textContent = "Upload error";
-                uploadStatus.className = "error";
-            }
-        });
-
-        fetchApps();
+        fetchApps()
     </script>
 </body>
 </html>
