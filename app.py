@@ -86,6 +86,13 @@ from b2sdk.v1 import DownloadDestBytes
 import io
 from flask import send_file, jsonify
 
+from flask import render_template
+
+@app.route("/", methods=["GET"])
+def dashboard():
+    return render_template("dashboard.html")
+
+
 @app.route("/apps/<filename>", methods=["GET"])
 def get_app(filename):
     try:
